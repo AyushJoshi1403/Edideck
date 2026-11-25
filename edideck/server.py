@@ -4,6 +4,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from . import core
+from urllib.parse import unquote
 
 WORK = Path("edideck-work")
 JOBS = {}
@@ -117,7 +118,7 @@ class H(BaseHTTPRequestHandler):
             else:
                 for old in WORK.glob("source.*"):
                     old.unlink()
-                src = WORK / ("source" + Path(self.headers.get("X-Name", "v.mp4")).suffix[:8])
+                src = WORK / ("source" + Path(unquote(self.headers.get("X-Name", "v.mp4"))).suffix[:8])
                 with open(src, "wb") as f:
                     left = length
                     while left > 0:

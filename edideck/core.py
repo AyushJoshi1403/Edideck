@@ -26,10 +26,44 @@ class Clip:
     track: list = field(default_factory=list)  # [[seconds, face position 0..1], ...]
 
 
+def _add_cuda_dlls():
+    """Let Windows find the pip-installed NVIDIA libraries (cuBLAS and cuDNN)."""
+    import os
+    from pathlib import Path
+    try:
+        import nvidia
+    except ImportError:
+        return
+    for root in list(nvidia.__path__):
+        for lib in ("cublas", "cudnn"):
+            d = Path(root) / lib / "bin"
+            if d.is_dir():
+                os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+                if hasattr(os, "add_dll_directory"):
+                    os.add_dll_directory(str(d))
+
+
+# def transcribe(path, model="small", device="auto"):
+#     """Speech to word timestamps. ffmpeg decodes the audio itself, so any video format works."""
+#     try:
+#         import numpy as np
+#         from faster_whisper import WhisperModel
+#     except ImportError:
+#         raise SystemExit("Speech support missing: pip install 'edideck[asr]'")
+#     r = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
+#                         "-f", "f32le", "-"], capture_output=True)
+#     if r.returncode:
+#         raise RuntimeError("ffmpeg could not read the audio: " + r.stderr.decode(errors="ignore")[-300:])
+#     audio = np.frombuffer(r.stdout, dtype=np.float32)
+#     segs, _ = WhisperModel(model, device=device).transcribe(audio, word_timestamps=True, vad_filter=True)
+#     return [Word(x.word.strip(), x.start, x.end) for s in segs for x in (s.words or [])]
+
+
 def transcribe(path, model="small", device="auto"):
-    """Speech to word timestamps. ffmpeg decodes the audio itself, so any video format works."""
+    """Speech to word timestamps. Uses the GPU if it works, otherwise the CPU."""
     try:
         import numpy as np
+        _add_cuda_dlls()
         from faster_whisper import WhisperModel
     except ImportError:
         raise SystemExit("Speech support missing: pip install 'edideck[asr]'")
@@ -38,8 +72,18 @@ def transcribe(path, model="small", device="auto"):
     if r.returncode:
         raise RuntimeError("ffmpeg could not read the audio: " + r.stderr.decode(errors="ignore")[-300:])
     audio = np.frombuffer(r.stdout, dtype=np.float32)
-    segs, _ = WhisperModel(model, device=device).transcribe(audio, word_timestamps=True, vad_filter=True)
-    return [Word(x.word.strip(), x.start, x.end) for s in segs for x in (s.words or [])]
+    attempts = ([("cuda", "float16"), ("cpu", "int8")] if device == "auto"
+                else [(device, "float16" if device == "cuda" else "int8")])
+    for dev, compute in attempts:
+        try:
+            print(f"Speech recognition running on {dev}")
+            segs, _ = WhisperModel(model, device=dev, compute_type=compute).transcribe(
+                audio, word_timestamps=True, vad_filter=True)
+            return [Word(x.word.strip(), x.start, x.end) for s in segs for x in (s.words or [])]
+        except Exception as e:
+            if (dev, compute) == attempts[-1]:
+                raise
+            print(f"GPU failed ({e}). Falling back to the CPU.")
 
 
 def sentences(words):
@@ -87,6 +131,19 @@ def pick(words, n=5, lo=20, hi=55):
     return chosen
 
 
+# def download(url, dest):
+#     """Fetch a video from a link (YouTube and many other sites) with yt-dlp."""
+#     dest = Path(dest)
+#     for old in dest.glob("source.*"):
+#         old.unlink()
+#     r = subprocess.run([sys.executable, "-m", "yt_dlp", "-f", "bv*[height<=1080]+ba/b", "--merge-output-format",
+#                         "mp4", "--no-playlist", "-o", str(dest / "source.%(ext)s"), url], capture_output=True, text=True)
+#     files = sorted(dest.glob("source.*"))
+#     if r.returncode or not files:
+#         raise RuntimeError("Download failed. Is yt-dlp installed (pip install 'edideck[web]')? " + r.stderr[-300:])
+#     return files[0]
+
+
 def download(url, dest):
     """Fetch a video from a link (YouTube and many other sites) with yt-dlp."""
     dest = Path(dest)
@@ -96,7 +153,7 @@ def download(url, dest):
                         "mp4", "--no-playlist", "-o", str(dest / "source.%(ext)s"), url], capture_output=True, text=True)
     files = sorted(dest.glob("source.*"))
     if r.returncode or not files:
-        raise RuntimeError("Download failed. Is yt-dlp installed (pip install 'edideck[web]')? " + r.stderr[-300:])
+        raise RuntimeError("Download failed: " + (r.stderr.strip()[-900:] or "no details from yt-dlp"))
     return files[0]
 
 

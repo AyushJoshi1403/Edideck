@@ -54,12 +54,12 @@ const HI={bold:'#ffc933',clean:'#47b3ff',pop:'#ac3cff'};
 const fmt=t=>{t=Math.max(0,t);return Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')+'.'+String(Math.floor(t%1*10))};
 const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 const NOSERVER='The Studio server is not running. In a terminal run: edideck studio';
-async function api(path,opt){try{const r=await fetch(path,opt);return await r.json()}catch(e){msg.textContent=NOSERVER;throw e}}
+async function api(path,opt){try{const r=await fetch(path,opt);return await r.json()}catch(e){msg.textContent=NOSERVER+' ('+e.message+')';throw e}}
 async function poll(job,done){const j=await api('/api/job/'+job);if(j.status==='running'){msg.textContent=j.msg+'…';return setTimeout(()=>poll(job,done),1500)}
  if(j.status==='error'){msg.textContent='Failed: '+j.msg;return}done(j.data)}
 async function analyze(opt){msg.textContent='Sending…';const r=await api('/api/analyze',opt);poll(r.job,d=>{live=true;load(d)})}
 function fromFile(f){if(/\.json$/i.test(f.name))return f.text().then(t=>{try{live=false;load(JSON.parse(t))}catch(e){msg.textContent='That file is not valid JSON.'}});
- analyze({method:'POST',body:f,headers:{'X-Name':f.name,'X-N':$('#n').value}})}
+ analyze({method:'POST',body:f,headers:{'X-Name':encodeURIComponent(f.name),'X-N':$('#n').value}})}
 $('#go').onclick=()=>{const u=$('#url').value.trim();if(!u){msg.textContent='Paste a link first.';return}
  analyze({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u,n:+$('#n').value})})};
 function load(d){if(!d||!Array.isArray(d.clips)){msg.textContent='No clips found in that file.';return}

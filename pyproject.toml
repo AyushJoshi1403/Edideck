@@ -6,8 +6,8 @@ requires-python = ">=3.10"
 dependencies = []
 [project.optional-dependencies]
 asr = ["faster-whisper", "numpy"]
-vision = ["opencv-python"]
-web = ["yt-dlp"]
+vision = ["opencv-python>=4.8,<5", "numpy"]
+web = ["yt-dlp[default]"]
 [project.scripts]
 edideck = "edideck.cli:main"
 [build-system]
