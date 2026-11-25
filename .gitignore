@@ -1,0 +1,35 @@
+# Virtual environment (this is the main cause of thousands of changes)
+.venv/
+venv/
+env/
+
+# Python build and cache files
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Edideck output: videos, downloads, rendered clips, working files
+edideck-work/
+edideck-out/
+
+# Video, audio and image files (large, and often not yours to share)
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.mp3
+*.wav
+
+# Secrets and local settings
+.env
+*.key
+
+# Editor and system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

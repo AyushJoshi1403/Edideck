@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Edideck Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#eef0f7;--card:#fff;--ink:#171a33;--mute:#5d6285;--line:#d9dcec;--cobalt:#3340f5;--sun:#ffc933;--hi:#ffc933;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--paper:#12142a;--card:#1b1e3b;--ink:#eef0ff;--mute:#9aa0c8;--line:#2c3058;--cobalt:#7a85ff;color-scheme:dark}}
+[hidden]{display:none!important}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.5 "Bricolage Grotesque",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:1040px;margin:0 auto;padding:40px 20px 80px}
+h1{font-weight:800;font-size:clamp(2.2rem,6vw,4rem);line-height:1;letter-spacing:-.03em;margin:0 0 14px;max-width:14ch}
+.lead{color:var(--mute);max-width:56ch;margin:0 0 22px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+button{font:600 15px "Bricolage Grotesque",system-ui,sans-serif;border:0;border-radius:10px;padding:11px 18px;background:var(--cobalt);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--line)}
+input[type=text],input[type=number],select{font:inherit;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.drop{border:2px dashed var(--line);border-radius:16px;padding:24px;text-align:center;color:var(--mute);margin-bottom:22px}
+.drop.over{border-color:var(--cobalt);color:var(--ink)}
+.clip{display:grid;grid-template-columns:150px 1fr;gap:22px;background:var(--card);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 1px 0 var(--line)}
+.clip.off{opacity:.45}
+.phone{width:150px;aspect-ratio:9/16;background:#0d0f22;border-radius:14px;position:relative;overflow:hidden}
+.phone video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.phone b{position:absolute;left:6px;right:6px;bottom:44px;color:#fff;font-weight:800;font-size:15px;line-height:1.15;text-align:center;text-shadow:0 1px 3px #000}
+.phone b i{font-style:normal;color:var(--hi)}.up .phone b{text-transform:uppercase}
+.head{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.head input{flex:1;font-weight:600;font-size:18px;background:transparent;border:0;border-bottom:1.5px solid var(--line);border-radius:0;padding:4px 0}
+.score{font-weight:800;color:var(--cobalt);white-space:nowrap}
+.row{display:grid;grid-template-columns:60px 1fr 56px;gap:12px;align-items:center;color:var(--mute);font-variant-numeric:tabular-nums}
+.row input{width:100%;accent-color:var(--cobalt)}
+.meta{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px;color:var(--mute)}
+.opts{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0 20px}
+.outs{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}.outs a{color:var(--cobalt);font-weight:600}.outs img{width:90px;border-radius:8px;display:block}
+@media(max-width:640px){.clip{grid-template-columns:1fr}.phone{margin:auto}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body><main>
+<h1>Review every cut before it renders.</h1>
+<p class="lead">Drop any video (MP4, MOV, MKV, WebM…) or paste a YouTube link. Edideck finds the best moments; you trim, rename and drop clips while watching the real footage, then render.</p>
+<div class="bar"><input type="text" id="url" placeholder="Paste a YouTube link" size="34" aria-label="Video link">
+<button id="go">Find highlights</button><button class="ghost" id="pick">Choose a video or clips.json</button><button class="ghost" id="demo">Try a sample</button>
+<input type="file" id="file" accept="video/*,.mov,.mkv,.mp4,.webm,.avi,.json" hidden></div>
+<div class="bar"><label>Clips <input type="number" id="n" value="5" min="1" max="15" style="width:72px"></label><span id="msg" role="status" class="lead" style="margin:0"></span></div>
+<div id="drop" class="drop">Drop a video file here</div>
+<div id="opts" class="opts" hidden>
+<label>Caption style <select id="style"><option value="bold">Bold yellow</option><option value="clean">Clean blue</option><option value="pop">Pop (capitals)</option></select></label>
+<input type="text" id="wm" placeholder="Watermark text (optional)" aria-label="Watermark"><input type="text" id="bgm" placeholder="Music file path (optional)" aria-label="Music path">
+<button id="render">Render kept clips</button><button class="ghost" id="save">Export clips.json</button></div>
+<div id="outs" class="outs"></div><div id="list"></div></main>
+<script>
+let data=null,live=false;const $=s=>document.querySelector(s),list=$('#list'),msg=$('#msg');
+const HI={bold:'#ffc933',clean:'#47b3ff',pop:'#ac3cff'};
+const fmt=t=>{t=Math.max(0,t);return Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')+'.'+String(Math.floor(t%1*10))};
+const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const NOSERVER='The Studio server is not running. In a terminal run: edideck studio';
+async function api(path,opt){try{const r=await fetch(path,opt);return await r.json()}catch(e){msg.textContent=NOSERVER;throw e}}
+async function poll(job,done){const j=await api('/api/job/'+job);if(j.status==='running'){msg.textContent=j.msg+'…';return setTimeout(()=>poll(job,done),1500)}
+ if(j.status==='error'){msg.textContent='Failed: '+j.msg;return}done(j.data)}
+async function analyze(opt){msg.textContent='Sending…';const r=await api('/api/analyze',opt);poll(r.job,d=>{live=true;load(d)})}
+function fromFile(f){if(/\.json$/i.test(f.name))return f.text().then(t=>{try{live=false;load(JSON.parse(t))}catch(e){msg.textContent='That file is not valid JSON.'}});
+ analyze({method:'POST',body:f,headers:{'X-Name':f.name,'X-N':$('#n').value}})}
+$('#go').onclick=()=>{const u=$('#url').value.trim();if(!u){msg.textContent='Paste a link first.';return}
+ analyze({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u,n:+$('#n').value})})};
+function load(d){if(!d||!Array.isArray(d.clips)){msg.textContent='No clips found in that file.';return}
+ data=d;d.clips.forEach(c=>{c.keep=c.keep!==false;c.lo=c.words.length?c.words[0].s:c.start;c.hi=c.words.length?c.words[c.words.length-1].e:c.end;c.start=Math.max(c.start,c.lo);c.end=Math.min(c.end,c.hi)});
+ $('#opts').hidden=false;msg.textContent=d.clips.length+' clips ready for review.';draw()}
+const words=c=>c.words.filter(w=>w.s>=c.start-.05&&w.e<=c.end+.05);
+function caption(c,t){const ws=words(c);let i=ws.findIndex(w=>t<w.e);if(i<0)i=ws.length-1;if(i<0)return'';const g=Math.floor(i/4)*4;
+ return ws.slice(g,g+4).map((w,k)=>g+k<=i&&t>=w.s?'<i>'+esc(w.w)+'</i>':esc(w.w)).join(' ')}
+function draw(){list.innerHTML='';document.documentElement.style.setProperty('--hi',HI[$('#style').value]);list.classList.toggle('up',$('#style').value==='pop');
+ data.clips.forEach(c=>{const el=document.createElement('section');el.className='clip'+(c.keep?'':' off');const fx=c.track&&c.track.length?c.track[0][1]*100:50;
+ el.innerHTML=`<div class="phone">${live?`<video src="/api/video" preload="metadata" playsinline style="object-position:${fx}% 50%"></video>`:''}<b></b></div><div>
+ <div class="head"><input type="text" aria-label="Clip title" value="${esc(c.title)}"><span class="score">Score ${c.score}</span></div>
+ <div class="row"><span>Start</span><input type="range" class="a" min="${c.lo}" max="${c.hi}" step=".1" value="${c.start}"><span class="ta"></span></div>
+ <div class="row"><span>End</span><input type="range" class="b" min="${c.lo}" max="${c.hi}" step=".1" value="${c.end}"><span class="tb"></span></div>
+ <div class="meta"><button class="ghost play">Play clip</button><label><input type="checkbox" class="keep" ${c.keep?'checked':''}> Render this clip</label><span class="len"></span></div></div>`;
+ const cap=el.querySelector('b'),v=el.querySelector('video'),upd=()=>{el.querySelector('.ta').textContent=fmt(c.start);el.querySelector('.tb').textContent=fmt(c.end);el.querySelector('.len').textContent=(c.end-c.start).toFixed(1)+'s long';cap.innerHTML=caption(c,c.start);if(v)v.currentTime=c.start};
+ el.querySelector('.a').oninput=e=>{c.start=Math.min(+e.target.value,c.end-1);e.target.value=c.start;upd()};
+ el.querySelector('.b').oninput=e=>{c.end=Math.max(+e.target.value,c.start+1);e.target.value=c.end;upd()};
+ el.querySelector('.head input').oninput=e=>c.title=e.target.value;
+ el.querySelector('.keep').onchange=e=>{c.keep=e.target.checked;el.classList.toggle('off',!c.keep)};
+ let timer;el.querySelector('.play').onclick=()=>{clearInterval(timer);let t=c.start;if(v){v.currentTime=c.start;v.play()}
+  timer=setInterval(()=>{if(v)t=v.currentTime;cap.innerHTML=caption(c,t);if(!v)t+=.1;if(t>=c.end){clearInterval(timer);if(v)v.pause()}},100)};
+ upd();list.appendChild(el)})}
+$('#style').onchange=()=>data&&draw();
+$('#render').onclick=async()=>{const out={...data,clips:data.clips.filter(c=>c.keep).map(({keep,lo,hi,...c})=>c)};if(!live){msg.textContent='Rendering needs the Studio server and a real video: run edideck studio.';return}
+ const r=await api('/api/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:out,opts:{style:$('#style').value,watermark:$('#wm').value,bgm:$('#bgm').value.trim()}})});
+ poll(r.job,res=>{msg.textContent='Rendered '+res.length+' clips. Files are in edideck-work/clips.';$('#outs').innerHTML=res.map(x=>`<div><img src="${x.thumb}" alt=""><a href="${x.video}" download>Clip ${x.id}</a></div>`).join('')})};
+$('#save').onclick=()=>{const out={...data,clips:data.clips.filter(c=>c.keep).map(({keep,lo,hi,...c})=>c)};
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));a.download='clips.reviewed.json';a.click()};
+$('#pick').onclick=()=>$('#file').click();$('#file').onchange=e=>e.target.files[0]&&fromFile(e.target.files[0]);
+const dz=$('#drop');dz.ondragover=e=>{e.preventDefault();dz.classList.add('over')};dz.ondragleave=()=>dz.classList.remove('over');
+dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');e.dataTransfer.files[0]&&fromFile(e.dataTransfer.files[0])};
+$('#demo').onclick=()=>{const T='Nobody tells you the real secret of editing. Cut the first three seconds and your retention doubles. Why does it work? Because viewers decide fast. Stop explaining and start with the payoff. Then show the 3 steps in order.'.split(' ');
+ let t=2;const ws=T.map(w=>{const s=t;t+=.32+w.length*.03;return{w,s:+s.toFixed(2),e:+(t-.05).toFixed(2)}});
+ live=false;load({source:'sample.mp4',clips:[{id:1,start:ws[0].s,end:ws[ws.length-1].e,score:61.4,title:'The real secret of editing',words:ws,track:[]}]})};
+</script></body></html>

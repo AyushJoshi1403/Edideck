@@ -1,0 +1,17 @@
+[project]
+name = "edideck"
+version = "0.1.0"
+description = "Local-first long-video to short-clip tool with a review-first Studio"
+requires-python = ">=3.10"
+dependencies = []
+[project.optional-dependencies]
+asr = ["faster-whisper", "numpy"]
+vision = ["opencv-python"]
+web = ["yt-dlp"]
+[project.scripts]
+edideck = "edideck.cli:main"
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+[tool.setuptools]
+packages = ["edideck"]
