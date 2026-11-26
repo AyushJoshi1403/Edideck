@@ -10,10 +10,15 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Edideck output: videos, downloads, rendered clips, working files
 edideck-work/
 edideck-out/
+clips*.json
 
 # Video, audio and image files (large, and often not yours to share)
 *.mp4
@@ -23,9 +28,17 @@ edideck-out/
 *.avi
 *.mp3
 *.wav
+*.m4a
+*.flac
+*.ogg
+
+# Logs and temporary files
+*.log
+*.tmp
 
 # Secrets and local settings
 .env
+.env.*
 *.key
 
 # Editor and system files
@@ -33,3 +46,4 @@ edideck-out/
 .idea/
 .DS_Store
 Thumbs.db
+Desktop.ini

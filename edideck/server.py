@@ -3,21 +3,30 @@ import json, os, threading, uuid, webbrowser
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from . import core
 from urllib.parse import unquote
+from . import core
 
 WORK = Path("edideck-work")
 JOBS = {}
 PAGE = Path(__file__).resolve().parent.parent / "studio" / "index.html"
 
 
+def step(job, msg, pct):
+    """Report progress, and stop here if the user pressed Cancel."""
+    if job.get("cancel"):
+        raise core.Cancelled()
+    job.update(msg=msg, pct=int(pct))
+
+
 def start(fn):
     jid = uuid.uuid4().hex[:8]
-    job = JOBS[jid] = {"status": "running", "msg": "Starting"}
+    job = JOBS[jid] = {"status": "running", "msg": "Starting", "pct": 0}
 
     def go():
         try:
-            job.update(data=fn(job), status="done")
+            job.update(data=fn(job), status="done", pct=100)
+        except core.Cancelled:
+            job.update(status="cancelled", msg="Cancelled")
         except BaseException as e:  # includes SystemExit from missing extras
             job.update(status="error", msg=str(e) or type(e).__name__)
     threading.Thread(target=go, daemon=True).start()
@@ -26,26 +35,26 @@ def start(fn):
 
 def analyze(job, src, url, n, model):
     if url:
-        job["msg"] = "Downloading the video"
+        step(job, "Downloading the video", 3)
         src = core.download(url, WORK)
-    job["msg"] = "Preparing a preview"
+    step(job, "Preparing a preview", 15)
     core.proxy(src, WORK / "proxy.mp4")
-    job["msg"] = "Listening to the audio (the first run downloads the speech model)"
-    words = core.transcribe(src, model)
-    job["msg"] = "Choosing highlights"
+    step(job, "Listening to the audio (the first run downloads the speech model)", 25)
+    words = core.transcribe(src, model, progress=lambda f: step(job, "Listening to the audio", 25 + f * 60))
+    step(job, "Choosing highlights", 88)
     base = os.environ.get("EDIDECK_LLM_URL")
     llm = (base, os.environ.get("EDIDECK_LLM_MODEL", "llama3.2")) if base else None
     clips = core.choose(words, n, llm)
-    job["msg"] = "Tracking faces"
-    for c in clips:
+    for i, c in enumerate(clips):
+        step(job, f"Tracking faces ({i + 1} of {len(clips)})", 90 + 9 * i / max(1, len(clips)))
         c.track = core.track(src, c.start, c.end)
     return {"source": str(Path(src).resolve()), "clips": [asdict(c) for c in clips]}
 
 
 def render(job, data, opts):
-    done = []
-    for i, c in enumerate(data["clips"], 1):
-        job["msg"] = f"Rendering clip {i} of {len(data['clips'])}"
+    done, total = [], len(data["clips"])
+    for i, c in enumerate(data["clips"]):
+        step(job, f"Rendering clip {i + 1} of {total}", 100 * i / total)
         p = core.render(data["source"], c, WORK / "clips", style=opts.get("style", "bold"),
                         watermark=opts.get("watermark", ""), bgm=opts.get("bgm") or None)
         done.append({"id": c["id"], "video": "/files/" + p.name, "thumb": f"/files/thumb{c['id']}.jpg"})
@@ -98,6 +107,10 @@ class H(BaseHTTPRequestHandler):
             return self._file(PAGE, "text/html; charset=utf-8")
         if self.path == "/api/video":
             return self._file(WORK / "proxy.mp4", "video/mp4")
+        if self.path == "/api/project":  # last saved review, if its preview video still exists
+            f = WORK / "project.json"
+            ok = f.is_file() and (WORK / "proxy.mp4").is_file()
+            return self._json({"data": json.loads(f.read_text(encoding="utf-8")) if ok else None})
         if self.path.startswith("/api/job/"):
             return self._json(JOBS.get(self.path.split("/")[-1], {"status": "error", "msg": "unknown job"}))
         if self.path.startswith("/files/"):
@@ -107,6 +120,17 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
+        if self.path.startswith("/api/cancel/"):
+            job = JOBS.get(self.path.split("/")[-1])
+            if job:
+                job["cancel"] = True
+            return self._json({"ok": bool(job)})
+        if self.path == "/api/project":
+            WORK.mkdir(exist_ok=True)
+            tmp = WORK / "project.tmp"
+            tmp.write_bytes(self.rfile.read(length))
+            tmp.replace(WORK / "project.json")
+            return self._json({"ok": True})
         if self.path == "/api/render":
             body = json.loads(self.rfile.read(length))
             return self._json({"job": start(lambda j: render(j, body["data"], body.get("opts", {})))})

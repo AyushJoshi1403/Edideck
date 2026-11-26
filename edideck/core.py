@@ -4,6 +4,9 @@ import json, re, statistics, subprocess, sys, urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+class Cancelled(Exception):
+    """Raised when the user presses Cancel in the Studio."""
+
 HOOKS = {"secret", "mistake", "never", "always", "truth", "why", "how", "nobody",
          "biggest", "stop", "real", "wrong", "best", "worst", "free", "need"}
 
@@ -43,24 +46,9 @@ def _add_cuda_dlls():
                     os.add_dll_directory(str(d))
 
 
-# def transcribe(path, model="small", device="auto"):
-#     """Speech to word timestamps. ffmpeg decodes the audio itself, so any video format works."""
-#     try:
-#         import numpy as np
-#         from faster_whisper import WhisperModel
-#     except ImportError:
-#         raise SystemExit("Speech support missing: pip install 'edideck[asr]'")
-#     r = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
-#                         "-f", "f32le", "-"], capture_output=True)
-#     if r.returncode:
-#         raise RuntimeError("ffmpeg could not read the audio: " + r.stderr.decode(errors="ignore")[-300:])
-#     audio = np.frombuffer(r.stdout, dtype=np.float32)
-#     segs, _ = WhisperModel(model, device=device).transcribe(audio, word_timestamps=True, vad_filter=True)
-#     return [Word(x.word.strip(), x.start, x.end) for s in segs for x in (s.words or [])]
-
-
-def transcribe(path, model="small", device="auto"):
-    """Speech to word timestamps. Uses the GPU if it works, otherwise the CPU."""
+def transcribe(path, model="small", device="auto", progress=None):
+    """Speech to word timestamps. Uses the GPU if it works, otherwise the CPU.
+    progress(f) is called with f from 0 to 1 as the audio is processed."""
     try:
         import numpy as np
         _add_cuda_dlls()
@@ -72,6 +60,7 @@ def transcribe(path, model="small", device="auto"):
     if r.returncode:
         raise RuntimeError("ffmpeg could not read the audio: " + r.stderr.decode(errors="ignore")[-300:])
     audio = np.frombuffer(r.stdout, dtype=np.float32)
+    total = max(len(audio) / 16000, 1.0)
     attempts = ([("cuda", "float16"), ("cpu", "int8")] if device == "auto"
                 else [(device, "float16" if device == "cuda" else "int8")])
     for dev, compute in attempts:
@@ -79,11 +68,45 @@ def transcribe(path, model="small", device="auto"):
             print(f"Speech recognition running on {dev}")
             segs, _ = WhisperModel(model, device=dev, compute_type=compute).transcribe(
                 audio, word_timestamps=True, vad_filter=True)
-            return [Word(x.word.strip(), x.start, x.end) for s in segs for x in (s.words or [])]
+            words = []
+            for s in segs:
+                words += [Word(x.word.strip(), x.start, x.end) for x in (s.words or [])]
+                if progress:
+                    progress(min(1.0, s.end / total))
+            return words
+        except Cancelled:
+            raise  # must not be mistaken for a GPU failure
         except Exception as e:
             if (dev, compute) == attempts[-1]:
                 raise
             print(f"GPU failed ({e}). Falling back to the CPU.")
+
+
+# def transcribe(path, model="small", device="auto"):
+#     """Speech to word timestamps. Uses the GPU if it works, otherwise the CPU."""
+#     try:
+#         import numpy as np
+#         _add_cuda_dlls()
+#         from faster_whisper import WhisperModel
+#     except ImportError:
+#         raise SystemExit("Speech support missing: pip install 'edideck[asr]'")
+#     r = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
+#                         "-f", "f32le", "-"], capture_output=True)
+#     if r.returncode:
+#         raise RuntimeError("ffmpeg could not read the audio: " + r.stderr.decode(errors="ignore")[-300:])
+#     audio = np.frombuffer(r.stdout, dtype=np.float32)
+#     attempts = ([("cuda", "float16"), ("cpu", "int8")] if device == "auto"
+#                 else [(device, "float16" if device == "cuda" else "int8")])
+#     for dev, compute in attempts:
+#         try:
+#             print(f"Speech recognition running on {dev}")
+#             segs, _ = WhisperModel(model, device=dev, compute_type=compute).transcribe(
+#                 audio, word_timestamps=True, vad_filter=True)
+#             return [Word(x.word.strip(), x.start, x.end) for s in segs for x in (s.words or [])]
+#         except Exception as e:
+#             if (dev, compute) == attempts[-1]:
+#                 raise
+#             print(f"GPU failed ({e}). Falling back to the CPU.")
 
 
 def sentences(words):
