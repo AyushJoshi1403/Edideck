@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="en">
+<head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Edideck Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+
 <style>
 :root{--paper:#eef0f7;--card:#fff;--ink:#171a33;--mute:#5d6285;--line:#d9dcec;--cobalt:#3340f5;--sun:#ffc933;--hi:#ffc933;color-scheme:light}
 @media(prefers-color-scheme:dark){:root{--paper:#12142a;--card:#1b1e3b;--ink:#eef0ff;--mute:#9aa0c8;--line:#2c3058;--cobalt:#7a85ff;color-scheme:dark}}
@@ -41,7 +43,11 @@ details{margin-top:12px;color:var(--mute)}summary{cursor:pointer;font-weight:600
 .outs{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}.outs a{color:var(--cobalt);font-weight:600}.outs img{width:90px;border-radius:8px;display:block}
 @media(max-width:640px){.clip{grid-template-columns:1fr}.phone{margin:auto}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
-</style></head><body><main>
+</style>
+</head>
+
+<body>
+<main>
 <h1>Review every cut before it renders.</h1>
 <p class="lead">Drop any video (MP4, MOV, MKV, WebM…) or paste a YouTube link. Edideck finds the best moments; you trim, rename, fix captions and drop clips while watching the real footage, then render.</p>
 <div class="bar"><input type="text" id="url" placeholder="Paste a YouTube link" size="34" aria-label="Video link">
@@ -49,15 +55,17 @@ details{margin-top:12px;color:var(--mute)}summary{cursor:pointer;font-weight:600
 <button class="ghost" id="resume" hidden>Resume last project</button>
 <input type="file" id="file" accept="video/*,.mov,.mkv,.mp4,.webm,.avi,.json" hidden></div>
 <div class="bar"><label>Clips <input type="number" id="n" value="5" min="1" max="15" style="width:72px"></label><span id="msg" role="status" class="lead" style="margin:0"></span></div>
-<div id="prog" class="prog" hidden><div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="fill" id="fill"></div></div><button class="ghost" id="cancel">Cancel</button></div>
-<div id="drop" class="drop">Drop a video file here</div>
+<div id="prog" class="prog" hidden><div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="fill" id="fill"></div></div><button class="ghost" id="pause">Pause</button><button class="ghost" id="cancel">Cancel</button></div>
+<div id="drop" class="drop">Drop a video file here <span style="display:block;margin-top:10px">or <button class="ghost" id="browse">Browse files</button></span></div>
 <div id="opts" class="opts" hidden>
 <label>Caption style <select id="style"><option value="bold">Bold yellow</option><option value="clean">Clean blue</option><option value="pop">Pop (capitals)</option></select></label>
 <input type="text" id="wm" placeholder="Watermark text (optional)" aria-label="Watermark"><input type="text" id="bgm" placeholder="Music file path (optional)" aria-label="Music path">
 <button id="render">Render kept clips</button><button class="ghost" id="save">Export clips.json</button></div>
-<div id="outs" class="outs"></div><div id="list"></div></main>
+<div id="outs" class="outs"></div><div id="list"></div>
+</main>
+
 <script>
-let data=null,live=false,curJob=null,saveT,resumeData=null;const $=s=>document.querySelector(s),list=$('#list'),msg=$('#msg');
+let data=null,live=false,curJob=null,saveT,resumeData=null,paused=false;const $=s=>document.querySelector(s),list=$('#list'),msg=$('#msg');
 const HI={bold:'#ffc933',clean:'#47b3ff',pop:'#ac3cff'};
 const fmt=t=>{t=Math.max(0,t);return Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')+'.'+String(Math.floor(t%1*10))};
 const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -65,11 +73,12 @@ const NOSERVER='The Studio server is not running. In a terminal run: edideck stu
 async function api(path,opt){try{const r=await fetch(path,opt);return await r.json()}catch(e){msg.textContent=NOSERVER+' ('+e.message+')';throw e}}
 function save(){if(!live||!data)return;clearTimeout(saveT);saveT=setTimeout(()=>fetch('/api/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{}),700)}
 function showProg(p,m){$('#prog').hidden=false;$('#fill').style.width=p+'%';$('.track').setAttribute('aria-valuenow',p);msg.textContent=m+' ('+p+'%)'}
-async function poll(job,done){curJob=job;const j=await api('/api/job/'+job);
- if(j.status==='running'){showProg(j.pct||0,j.msg);return setTimeout(()=>poll(job,done),1000)}
+async function poll(job,done){if(curJob!==job){paused=false;$('#pause').textContent='Pause'}curJob=job;const j=await api('/api/job/'+job);
+ if(j.status==='running'){showProg(j.pct||0,(j.paused?'Paused. ':'')+j.msg);return setTimeout(()=>poll(job,done),1000)}
  $('#prog').hidden=true;if(j.status==='cancelled'){msg.textContent='Cancelled.';return}
  if(j.status==='error'){msg.textContent='Failed: '+j.msg;return}done(j.data)}
 $('#cancel').onclick=()=>{if(curJob){api('/api/cancel/'+curJob,{method:'POST'});msg.textContent='Cancelling… the current step has to finish first.'}};
+$('#pause').onclick=()=>{if(!curJob)return;paused=!paused;api('/api/'+(paused?'pause':'resume')+'/'+curJob,{method:'POST'});$('#pause').textContent=paused?'Resume':'Pause';msg.textContent=paused?'Pausing… it stops at the end of the current step.':'Resuming…'};
 async function analyze(opt){msg.textContent='Sending…';const r=await api('/api/analyze',opt);poll(r.job,d=>{live=true;load(d)})}
 function fromFile(f){if(/\.json$/i.test(f.name))return f.text().then(t=>{try{live=false;load(JSON.parse(t))}catch(e){msg.textContent='That file is not valid JSON.'}});
  analyze({method:'POST',body:f,headers:{'X-Name':encodeURIComponent(f.name),'X-N':$('#n').value}})}
@@ -115,4 +124,7 @@ fetch('/api/project').then(r=>r.json()).then(j=>{if(j.data&&j.data.clips){resume
 $('#demo').onclick=()=>{const T='Nobody tells you the real secret of editing. Cut the first three seconds and your retention doubles. Why does it work? Because viewers decide fast. Stop explaining and start with the payoff. Then show the 3 steps in order.'.split(' ');
  let t=2;const ws=T.map(w=>{const s=t;t+=.32+w.length*.03;return{w,s:+s.toFixed(2),e:+(t-.05).toFixed(2)}});
  live=false;load({source:'sample.mp4',clips:[{id:1,start:ws[0].s,end:ws[ws.length-1].e,score:61.4,title:'The real secret of editing',words:ws,track:[]}]})};
-</script></body></html>
+$('#browse').onclick=()=>$('#file').click();
+</script>
+</body>
+</html>

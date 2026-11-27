@@ -1,5 +1,6 @@
 """Local Studio server (stdlib only). Listens on 127.0.0.1, so only this computer can reach it."""
 import json, os, threading, uuid, webbrowser
+import time
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,10 +13,24 @@ PAGE = Path(__file__).resolve().parent.parent / "studio" / "index.html"
 
 
 def step(job, msg, pct):
-    """Report progress, and stop here if the user pressed Cancel."""
+    """Report progress; stop on Cancel; wait here while paused."""
     if job.get("cancel"):
         raise core.Cancelled()
+    if job.get("pause"):
+        job["paused"] = True
+        while job.get("pause") and not job.get("cancel"):
+            time.sleep(0.3)
+        job["paused"] = False
+        if job.get("cancel"):
+            raise core.Cancelled()
     job.update(msg=msg, pct=int(pct))
+
+
+# def step(job, msg, pct):
+#     """Report progress, and stop here if the user pressed Cancel."""
+#     if job.get("cancel"):
+#         raise core.Cancelled()
+#     job.update(msg=msg, pct=int(pct))
 
 
 def start(fn):
@@ -124,6 +139,11 @@ class H(BaseHTTPRequestHandler):
             job = JOBS.get(self.path.split("/")[-1])
             if job:
                 job["cancel"] = True
+            return self._json({"ok": bool(job)})
+        if self.path.startswith(("/api/pause/", "/api/resume/")):
+            job = JOBS.get(self.path.split("/")[-1])
+            if job:
+                job["pause"] = self.path.startswith("/api/pause/")
             return self._json({"ok": bool(job)})
         if self.path == "/api/project":
             WORK.mkdir(exist_ok=True)
